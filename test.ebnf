@@ -1,0 +1,4 @@
+GRAMMAR YourLanguage
+
+PARSER
+    start = "a"* "b";

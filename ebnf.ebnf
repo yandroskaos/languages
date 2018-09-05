@@ -1,0 +1,64 @@
+GRAMMAR EBNF
+
+SETS
+    Alpha        = ['a' .. 'z'] + ['A' .. 'Z'] + ['_'];
+    DecimalDigit = ['0' .. '9'];
+    AlphaDigit   = Alpha + DecimalDigit;
+    WhiteSpaces  = [' ', TB, CR, NL];
+
+COMMENTS
+    Separator = WhiteSpaces;
+    Comment   = '#' (!NL ANY)* NL;
+
+SCANNER
+    CteString  = '"' (!'"' ANY)* '"'; 
+    CteChar    = "'" ANY "'";
+    CteNatural = DecimalDigit+;
+    CteInt     = '-'? DecimalDigit+;
+    Identifier = Alpha AlphaDigit*;
+
+PARSER
+    SetEnumeration = ((<'['> (CteChar | Identifier) (<','> (CteChar | Identifier))* <']'>) -> _2) -> &"<EN>";
+    SetRange       = (<'['> CteChar <".."> CteChar <']'>) -> ?"<RG>";
+    SetValue       = Identifier | SetEnumeration | SetRange | ('!' SetValue) -> ^1 | <'('> SetExpression <')'> ;
+    SetExpression  = ((SetValue (('*' | '+' | '-') SetExpression)?) -> _2 ) -> ^2 ;
+    SetRule        = (Identifier <'='> SetExpression <';'>) -> ^1;
+
+    LexParser     = CteString | CteChar | Identifier | (('^' | '!') LexParser) -> ^1 | <'('> LexProduction <')'>;
+    LexCombinator = (LexParser (
+                        '*' | '+' | '?' | 
+                        [ '{' CteNatural (',' ('N' | CteNatural))? '}' ]
+                        )?
+                    ) -> ^-1;
+    LexSequence   = LexCombinator+ -> ?"&";
+    LexChoice     = ((LexSequence (<'|'> LexSequence)*) -> _2) -> ?"|";
+    LexProduction = LexChoice;
+    LexRule       = (Identifier <'='> LexProduction <';'>) -> ^1;
+
+    YaccParser     = CteString | CteChar | Identifier | (('^' | '!') YaccParser) -> ^1 | (<'['> YaccProduction <']'>) -> &"[]" | (<'<'> YaccProduction <'>'>) -> &"<>" | <'('> YaccProduction <')'>;
+    YaccCombinator = (YaccParser (
+                        '*' | '+' | '?' | 
+                        [ '{' CteNatural (',' ('N' | CteNatural))? '}' ]
+                        )?
+                    ) -> ^-1;
+	YaccAction     = (YaccCombinator (<"->"> ( 
+                            [ '&' CteString ] | 
+                            [ '?' CteString ] | 
+                            [ '_' CteInt    ] | 
+                            [ '^' CteInt    ] |
+							  "<<"            |
+							  ">>"
+                    ))?) -> ^-1;
+	YaccSequence   = YaccAction+ -> ?"&";
+	YaccChoice     = ((YaccSequence (<'|'> YaccSequence)*) -> _2) -> ?"|";
+	YaccProduction = YaccChoice;
+	YaccRule       = (Identifier <'='> YaccProduction <';'>) -> ^1;
+
+    Grammar = (<"GRAMMAR"> Identifier 
+        ((("SETS"     SetRule+)  -> _2) -> ^1)?
+        ((("COMMENTS" LexRule+)  -> _2) -> ^1)?
+        ((("SCANNER"  LexRule+)  -> _2) -> ^1)?
+        ((("PARSER"   YaccRule+) -> _2) -> ^1)
+        EOI) -> ^1;
+
+	start = Grammar;
